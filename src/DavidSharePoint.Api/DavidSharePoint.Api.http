@@ -1,0 +1,8 @@
+@host = http://localhost:5058
+
+POST {{host}}/api/sharepoint/file-names
+Content-Type: application/json
+
+{
+  "sharePointUrl": "https://contoso.sharepoint.com/sites/Finance/Shared%20Documents/Reports"
+}

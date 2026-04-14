@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+.vs
+bin
+obj
+**/bin
+**/obj
+README.md
+download-sharepoint-folder.ps1
+sharepoint-download-n8n-workflow.json
+test.http
