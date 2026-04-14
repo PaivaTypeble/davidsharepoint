@@ -1,0 +1,29 @@
+### Microsoft Graph flow for the provided SharePoint folder link.
+### 1. Acquire a delegated token with Sites.Read.All.
+### 2. Resolve the site by path.
+### 3. List the site drives and match "Documentos Partilhados".
+### 4. Enumerate the folder and download files.
+
+@graphHost = https://graph.microsoft.com/v1.0
+@tenantId = organizations
+@siteHost = awareness.sharepoint.com
+@sitePath = sites/AW-Autom
+@driveId = REPLACE_WITH_DRIVE_ID
+@folderPath = Geral/Matriz/AWA_510231845_AWARENESS_Accounting
+@accessToken = REPLACE_WITH_BEARER_TOKEN
+
+### Resolve site
+GET {{graphHost}}/sites/{{siteHost}}:/{{sitePath}}
+Authorization: Bearer {{accessToken}}
+
+### List document libraries for the site
+GET {{graphHost}}/sites/{{siteHost}},REPLACE_SITE_COLLECTION_ID,REPLACE_WEB_ID/drives?$select=id,name,webUrl
+Authorization: Bearer {{accessToken}}
+
+### List the target folder children
+GET {{graphHost}}/drives/{{driveId}}/root:/{{folderPath}}:/children?$top=200
+Authorization: Bearer {{accessToken}}
+
+### Download one file by item id
+GET {{graphHost}}/drives/{{driveId}}/items/REPLACE_WITH_ITEM_ID/content
+Authorization: Bearer {{accessToken}}

@@ -1,0 +1,488 @@
+{
+  "name": "SharePoint Folder Download",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{\n  json: {\n    tenantId: 'YOUR_TENANT_ID',\n    clientId: 'YOUR_CLIENT_ID',\n    clientSecret: 'YOUR_CLIENT_SECRET',\n    sharepointFolderUrl: 'https://contoso.sharepoint.com/sites/Finance/Shared%20Documents/Reports',\n    downloadRoot: 'C:/n8n/sharepoint-downloads',\n    deltaPageSize: 200,\n  },\n}];"
+      },
+      "id": "2",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://login.microsoftonline.com/' + $json.tenantId + '/oauth2/v2.0/token' }}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "client_id",
+              "value": "={{ $json.clientId }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.clientSecret }}"
+            },
+            {
+              "name": "scope",
+              "value": "https://graph.microsoft.com/.default"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "3",
+      "name": "Get Microsoft Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const config = $('Config').first().json;\n\nconst required = ['tenantId', 'clientId', 'clientSecret', 'sharepointFolderUrl', 'downloadRoot'];\nfor (const key of required) {\n  const value = String(config[key] ?? '').trim();\n  if (!value || value.startsWith('YOUR_')) {\n    throw new Error('Set ' + key + ' in the Config node before running the workflow.');\n  }\n}\n\nlet inputUrl;\ntry {\n  inputUrl = new URL(String(config.sharepointFolderUrl).trim());\n} catch {\n  throw new Error('sharepointFolderUrl is not a valid URL.');\n}\n\nconst hostname = inputUrl.hostname;\nlet serverRelativePath = '';\nfor (const key of ['id', 'RootFolder']) {\n  const value = inputUrl.searchParams.get(key);\n  if (value) {\n    serverRelativePath = decodeURIComponent(value);\n    break;\n  }\n}\n\nif (!serverRelativePath) {\n  serverRelativePath = decodeURIComponent(inputUrl.pathname);\n}\n\nserverRelativePath = serverRelativePath\n  .replace(/\\\\/g, '/')\n  .replace(/\\/Forms\\/AllItems\\.aspx$/i, '')\n  .replace(/\\/+/g, '/')\n  .replace(/\\/$/, '');\n\nif (!serverRelativePath.startsWith('/')) {\n  serverRelativePath = '/' + serverRelativePath;\n}\n\nconst segments = serverRelativePath.split('/').filter(Boolean);\nif (!segments.length) {\n  throw new Error('Could not determine the SharePoint folder path from sharepointFolderUrl.');\n}\n\nconst candidates = [];\nconst seen = new Set();\n\nconst addCandidate = (siteParts, withinSite) => {\n  if (!withinSite.length) return;\n\n  const libraryName = decodeURIComponent(withinSite[0]);\n  const folderRelativePath = withinSite.slice(1)\n    .map((segment) => decodeURIComponent(segment))\n    .join('/');\n  const candidateSitePath = siteParts.length ? '/' + siteParts.join('/') : '';\n  const siteResolveUrl = candidateSitePath\n    ? 'https://graph.microsoft.com/v1.0/sites/' + hostname + ':' + candidateSitePath\n    : 'https://graph.microsoft.com/v1.0/sites/' + hostname;\n\n  const candidateKey = candidateSitePath + '|' + libraryName + '|' + folderRelativePath;\n  if (seen.has(candidateKey)) return;\n  seen.add(candidateKey);\n\n  candidates.push({\n    hostname,\n    originalUrl: String(config.sharepointFolderUrl).trim(),\n    serverRelativePath,\n    candidateSitePath,\n    siteResolveUrl,\n    libraryName,\n    folderRelativePath,\n  });\n};\n\nif (segments[0] === 'sites' || segments[0] === 'teams') {\n  if (segments.length < 3) {\n    throw new Error('The SharePoint URL must include a site path and a document library.');\n  }\n\n  for (let siteLength = segments.length - 1; siteLength >= 2; siteLength--) {\n    addCandidate(segments.slice(0, siteLength), segments.slice(siteLength));\n  }\n} else {\n  addCandidate([], segments);\n}\n\nif (!candidates.length) {\n  throw new Error('No candidate SharePoint site paths could be built from sharepointFolderUrl.');\n}\n\nreturn candidates.map((candidate) => ({ json: candidate }));"
+      },
+      "id": "4",
+      "name": "Parse SharePoint URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.siteResolveUrl }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "5",
+      "name": "Resolve Site Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const responses = $input.all();\n\nfor (let index = 0; index < responses.length; index++) {\n  const response = responses[index].json;\n  if (response.statusCode >= 200 && response.statusCode < 300 && response.body && response.body.id) {\n    const candidate = $('Parse SharePoint URL').itemMatching(index).json;\n    return [{\n      json: {\n        ...candidate,\n        siteId: response.body.id,\n        siteName: response.body.displayName || response.body.name || '',\n        siteWebUrl: response.body.webUrl || '',\n      },\n    }];\n  }\n}\n\nthrow new Error('None of the candidate SharePoint site paths resolved. Check the URL and confirm the app has Sites.Read.All or Files.Read.All application permissions.');"
+      },
+      "id": "6",
+      "name": "Select Resolved Site",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://graph.microsoft.com/v1.0/sites/' + $json.siteId + '/drives?$select=id,name,webUrl,driveType' }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "7",
+      "name": "List Drives",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const site = $('Select Resolved Site').first().json;\nconst payload = $input.first().json;\nconst drives = Array.isArray(payload.value) ? payload.value : [];\n\nif (!drives.length) {\n  throw new Error('No document libraries were returned for the resolved SharePoint site.');\n}\n\nconst normalize = (value = '') => decodeURIComponent(String(value))\n  .replace(/%20/gi, ' ')\n  .toLowerCase()\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst targetLibrary = normalize(site.libraryName);\nconst serverRelativePath = normalize(site.serverRelativePath);\n\nconst scoreDrive = (drive) => {\n  const driveName = normalize(drive.name);\n  let lastSegment = '';\n\n  try {\n    const driveUrl = new URL(drive.webUrl || '');\n    const pathSegments = driveUrl.pathname.split('/').filter(Boolean);\n    lastSegment = normalize(pathSegments[pathSegments.length - 1] || '');\n  } catch {}\n\n  let score = 0;\n  if (driveName === targetLibrary) score = 100;\n  if (lastSegment === targetLibrary) score = Math.max(score, 90);\n  if (serverRelativePath.includes('/' + driveName + '/')) score = Math.max(score, 80);\n  if (serverRelativePath.endsWith('/' + driveName)) score = Math.max(score, 80);\n\n  return score;\n};\n\nconst ranked = drives\n  .map((drive) => ({ drive, score: scoreDrive(drive) }))\n  .sort((left, right) => right.score - left.score);\n\nif (!ranked.length || ranked[0].score <= 0) {\n  throw new Error(\n    'Could not match document library \"' +\n      site.libraryName +\n      '\". Available drives: ' +\n      drives.map((drive) => drive.name).join(', '),\n  );\n}\n\nconst selected = ranked[0].drive;\nreturn [{\n  json: {\n    ...site,\n    driveId: selected.id,\n    driveName: selected.name,\n    driveWebUrl: selected.webUrl || '',\n  },\n}];"
+      },
+      "id": "8",
+      "name": "Pick Drive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.folderRelativePath ? ('https://graph.microsoft.com/v1.0/drives/' + $json.driveId + '/root:/' + $json.folderRelativePath.split('/').map((segment) => encodeURIComponent(segment)).join('/')) : ('https://graph.microsoft.com/v1.0/drives/' + $json.driveId + '/root') }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "9",
+      "name": "Resolve Target Item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $('Pick Drive').first().json.driveId + '/root/delta?$select=id,name,parentReference,file,folder,deleted,webUrl,size,lastModifiedDateTime&$top=' + ($('Config').first().json.deltaPageSize || 200) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body['@odata.nextLink'] }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body['@odata.nextLink'] }}",
+              "limitPagesFetched": false,
+              "requestInterval": 100
+            }
+          }
+        }
+      },
+      "id": "10",
+      "name": "Enumerate Drive Delta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const config = $('Config').first().json;\nconst drive = $('Pick Drive').first().json;\nconst targetItem = $('Resolve Target Item').first().json;\nconst pages = $input.all();\n\nconst normalizeRoot = (value) => String(value || '')\n  .replace(/\\\\/g, '/')\n  .replace(/\\/+$/, '');\n\nconst downloadRoot = normalizeRoot(config.downloadRoot);\nif (!downloadRoot || downloadRoot.startsWith('YOUR_')) {\n  throw new Error('Set downloadRoot in the Config node before running the workflow.');\n}\n\nconst reservedWindowsNames = new Set([\n  'CON', 'PRN', 'AUX', 'NUL',\n  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',\n  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',\n]);\n\nconst sanitizeSegment = (segment) => {\n  let sanitized = String(segment || '')\n    .replace(/[<>:\"/\\\\|?*\\u0000-\\u001F]/g, '_')\n    .replace(/[. ]+$/g, '')\n    .trim();\n\n  if (!sanitized) sanitized = '_';\n  if (reservedWindowsNames.has(sanitized.toUpperCase())) sanitized = '_' + sanitized;\n  return sanitized;\n};\n\nconst joinLocalPath = (root, parts) => [normalizeRoot(root), ...parts].join('/');\nconst getPageBody = (item) => item.json.body || item.json;\n\nconst rawItems = [];\nfor (const page of pages) {\n  const body = getPageBody(page);\n  const values = Array.isArray(body.value) ? body.value : [];\n  for (const entry of values) {\n    if (entry && entry.id) rawItems.push(entry);\n  }\n}\n\nconst lastById = new Map();\nfor (const item of rawItems) lastById.set(item.id, item);\nif (targetItem && targetItem.id && !lastById.has(targetItem.id)) {\n  lastById.set(targetItem.id, targetItem);\n}\n\nif (targetItem.file) {\n  const safeName = sanitizeSegment(targetItem.name || 'downloaded-file');\n  return [{\n    json: {\n      itemId: targetItem.id,\n      driveId: drive.driveId,\n      relativePath: targetItem.name || safeName,\n      targetFilePath: joinLocalPath(downloadRoot, [safeName]),\n      sourceWebUrl: targetItem.webUrl || '',\n      size: targetItem.size ?? null,\n      lastModifiedDateTime: targetItem.lastModifiedDateTime ?? null,\n    },\n  }];\n}\n\nconst files = [];\n\nconst getRelativeParts = (item) => {\n  const parts = [item.name || item.id];\n  const visited = new Set([item.id]);\n  let parentId = item.parentReference && item.parentReference.id;\n\n  while (parentId) {\n    if (parentId === targetItem.id) return parts;\n    if (visited.has(parentId)) return null;\n    visited.add(parentId);\n\n    const parent = lastById.get(parentId);\n    if (!parent) return null;\n\n    parts.unshift(parent.name || parent.id);\n    parentId = parent.parentReference && parent.parentReference.id;\n  }\n\n  return null;\n};\n\nfor (const item of lastById.values()) {\n  if (!item || !item.id || item.deleted || !item.file) continue;\n\n  const parts = getRelativeParts(item);\n  if (!parts || !parts.length) continue;\n\n  const safeParts = parts.map((part) => sanitizeSegment(part));\n  files.push({\n    json: {\n      itemId: item.id,\n      driveId: drive.driveId,\n      relativePath: parts.join('/'),\n      targetFilePath: joinLocalPath(downloadRoot, safeParts),\n      sourceWebUrl: item.webUrl || '',\n      size: item.size ?? null,\n      lastModifiedDateTime: item.lastModifiedDateTime ?? null,\n    },\n  });\n}\n\nfiles.sort((left, right) => left.json.targetFilePath.localeCompare(right.json.targetFilePath));\nreturn files;"
+      },
+      "id": "11",
+      "name": "Prepare Download Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "={{ 'node -e \"const fs=require(\\'fs\\');const path=require(\\'path\\');fs.mkdirSync(path.dirname(process.argv[1]),{recursive:true});\" ' + JSON.stringify($('Prepare Download Items').item.json.targetFilePath) }}"
+      },
+      "id": "12",
+      "name": "Ensure Parent Directory",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $('Prepare Download Items').item.json.driveId + '/items/' + $('Prepare Download Items').item.json.itemId + '/content' }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 0
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "13",
+      "name": "Download File Binary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Prepare Download Items').item.json.targetFilePath }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "14",
+      "name": "Write File to Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Microsoft Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Microsoft Token": {
+      "main": [
+        [
+          {
+            "node": "Parse SharePoint URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse SharePoint URL": {
+      "main": [
+        [
+          {
+            "node": "Resolve Site Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Site Candidates": {
+      "main": [
+        [
+          {
+            "node": "Select Resolved Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Resolved Site": {
+      "main": [
+        [
+          {
+            "node": "List Drives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Drives": {
+      "main": [
+        [
+          {
+            "node": "Pick Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Drive": {
+      "main": [
+        [
+          {
+            "node": "Resolve Target Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Target Item": {
+      "main": [
+        [
+          {
+            "node": "Enumerate Drive Delta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enumerate Drive Delta": {
+      "main": [
+        [
+          {
+            "node": "Prepare Download Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Download Items": {
+      "main": [
+        [
+          {
+            "node": "Ensure Parent Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Parent Directory": {
+      "main": [
+        [
+          {
+            "node": "Download File Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File Binary": {
+      "main": [
+        [
+          {
+            "node": "Write File to Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
