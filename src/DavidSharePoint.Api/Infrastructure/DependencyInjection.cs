@@ -1,4 +1,5 @@
 using DavidSharePoint.Api.Infrastructure.Configuration;
+using DavidSharePoint.Api.Infrastructure.Documents;
 using DavidSharePoint.Api.Infrastructure.Graph;
 using DavidSharePoint.Api.Infrastructure.SharePoint;
 
@@ -10,12 +11,18 @@ public static class DependencyInjection
     {
         services.AddOptions<MicrosoftGraphOptions>()
             .Bind(configuration.GetSection(MicrosoftGraphOptions.SectionName));
+        services.AddOptions<DocumentRoutingOptions>()
+            .Bind(configuration.GetSection(DocumentRoutingOptions.SectionName));
 
         services.AddSingleton<IGraphAccessTokenProvider, GraphAccessTokenProvider>();
-        services.AddHttpClient<ISharePointFileNameService, SharePointGraphFileNameService>(client =>
+        services.AddSingleton<ICompanyWorkbookReader, ClosedXmlCompanyWorkbookReader>();
+        services.AddSingleton<ICompanyMatcher, CompanyMatcher>();
+        services.AddSingleton<IDocumentTextExtractor, NativeDocumentTextExtractor>();
+        services.AddHttpClient<ISharePointGraphService, SharePointGraphService>(client =>
         {
             client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
         });
+        services.AddTransient<ISharePointFileNameService, SharePointGraphFileNameService>();
 
         return services;
     }

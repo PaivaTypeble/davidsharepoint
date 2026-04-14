@@ -1,4 +1,5 @@
 using DavidSharePoint.Api.Features.SharePoint.ListFileNames;
+using DavidSharePoint.Api.Features.SharePoint.RouteDocument;
 using DavidSharePoint.Api.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using ModelContextProtocol.Server;
@@ -11,6 +12,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
 builder.Services.AddSharePointInfrastructure(builder.Configuration);
 builder.Services.AddTransient<ListSharePointFileNamesHandler>();
+builder.Services.AddTransient<RouteSharePointDocumentHandler>();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
 	options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -46,6 +48,7 @@ app.MapHealthChecks("/health")
 app.MapOpenApi();
 app.MapScalarApiReference("/scalar");
 app.MapListSharePointFileNamesEndpoint();
+app.MapRouteSharePointDocumentEndpoint();
 app.MapMcp("/mcp");
 
 app.Run();

@@ -1,0 +1,1239 @@
+﻿{
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    tenantId: 'cdaa8854-518d-4919-9955-4b57e9f57741',\n    clientId: '__CLIENT_I   ',\n    clientSecret: '__SECRET__',\n    sourceFileUrl: 'https://awareness.sharepoint.com/sites/AW-Autom/Documentos%20Partilhados/Geral/Matriz/AWA_510231845_AWARENESS_Accounting/202601/Awareness%200126.pdf',\n    destinationRootFolderUrl: 'https://awareness.sharepoint.com/sites/AW-Autom/Documentos%20Partilhados/Geral/Matriz',\n    mappingWorkbookUrl: '',\n    mappingWorkbookFileName: 'Company Acronyms and NIPC.xlsx',\n    targetFileName: '',\n    dryRun: true,\n  },\n}];"
+      },
+      "id": "bc90ffa6-a95e-4b5d-b002-3bd389858684",
+      "name": "Config1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://login.microsoftonline.com/' + $json.tenantId + '/oauth2/v2.0/token' }}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "client_id",
+              "value": "={{ $json.clientId }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.clientSecret }}"
+            },
+            {
+              "name": "scope",
+              "value": "https://graph.microsoft.com/.default"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "6fdeb05e-5bf2-4068-bd66-45c05cc9602e",
+      "name": "Get Microsoft Token1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        784,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Config1').first().json;\r\n\r\nconst firstNonEmpty = (...values) => {\r\n  for (const value of values) {\r\n    const normalized = String(value ?? '').trim();\r\n    if (normalized) {\r\n      return normalized;\r\n    }\r\n  }\r\n\r\n  return '';\r\n};\r\n\r\nconst normalizeConfiguredSharePointUrl = (value, fallbackOrigin = '') => {\r\n  const raw = String(value ?? '')\r\n    .trim()\r\n    .replace(/^['\"]+|['\"]+$/g, '');\r\n\r\n  if (!raw) {\r\n    return '';\r\n  }\r\n\r\n  if (/^https?:\\/\\//i.test(raw)) {\r\n    return raw;\r\n  }\r\n\r\n  if (/^\\/\\//.test(raw)) {\r\n    return 'https:' + raw;\r\n  }\r\n\r\n  if (/^[^/\\s]+\\.sharepoint\\.com(\\/|$)/i.test(raw)) {\r\n    return 'https://' + raw;\r\n  }\r\n\r\n  if (fallbackOrigin && (/^\\//.test(raw) || /^(sites|teams)\\//i.test(raw) || /^:[^/]+:\\/r\\//i.test(raw))) {\r\n    const normalizedPath = raw.startsWith('/') ? raw : '/' + raw;\r\n    return fallbackOrigin + normalizedPath;\r\n  }\r\n\r\n  return raw;\r\n};\r\n\r\nconst parseAbsoluteUrl = (value) => {\r\n  const raw = String(value ?? '').trim();\r\n  const match = /^(https?):\\/\\/([^/?#]+)([^?#]*)?(\\?[^#]*)?(#.*)?$/i.exec(raw);\r\n\r\n  if (!match) {\r\n    return null;\r\n  }\r\n\r\n  return {\r\n    protocol: match[1].toLowerCase(),\r\n    hostname: String(match[2]).split(':')[0].toLowerCase(),\r\n    origin: match[1].toLowerCase() + '://' + match[2],\r\n  };\r\n};\r\n\r\nconst getOrigin = (value) => {\r\n  return parseAbsoluteUrl(value)?.origin || '';\r\n};\r\n\r\nconst combineUrl = (baseUrl, fileName) => {\r\n  const normalizedBaseUrl = String(baseUrl || '').trim();\r\n  const separator = normalizedBaseUrl.endsWith('/') ? '' : '/';\r\n  return normalizedBaseUrl + separator + encodeURIComponent(fileName);\r\n};\r\n\r\nconst required = ['tenantId', 'clientId', 'clientSecret', 'sourceFileUrl', 'destinationRootFolderUrl'];\r\nfor (const key of required) {\r\n  const value = String(config[key] ?? '').trim();\r\n  if (!value || value.startsWith('YOUR_')) {\r\n    throw new Error('Set ' + key + ' in the Config node before running the workflow.');\r\n  }\r\n\r\n  if ((key === 'sourceFileUrl' || key === 'destinationRootFolderUrl') && /(^https?:\\/\\/)?contoso\\.sharepoint\\.com\\b/i.test(value)) {\r\n    throw new Error('Replace the demo ' + key + ' in the Config node before running the workflow.');\r\n  }\r\n}\r\n\r\nconst destinationRootFolderUrl = normalizeConfiguredSharePointUrl(config.destinationRootFolderUrl);\r\nconst destinationOrigin = getOrigin(destinationRootFolderUrl);\r\nconst sourceFileUrl = normalizeConfiguredSharePointUrl(config.sourceFileUrl, destinationOrigin);\r\nconst mappingWorkbookFileName = firstNonEmpty(config.mappingWorkbookFileName, 'Company Acronyms and NIPC.xlsx');\r\nconst mappingWorkbookUrl = normalizeConfiguredSharePointUrl(\r\n  firstNonEmpty(\r\n    config.mappingWorkbookUrl,\r\n    combineUrl(destinationRootFolderUrl, mappingWorkbookFileName),\r\n  ),\r\n  destinationOrigin,\r\n);\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      kind: 'source',\r\n      sharePointUrl: sourceFileUrl,\r\n      originHint: destinationOrigin,\r\n      expectedType: 'file',\r\n    },\r\n  },\r\n  {\r\n    json: {\r\n      kind: 'destinationRoot',\r\n      sharePointUrl: destinationRootFolderUrl,\r\n      originHint: destinationOrigin,\r\n      expectedType: 'folder',\r\n    },\r\n  },\r\n  {\r\n    json: {\r\n      kind: 'workbook',\r\n      sharePointUrl: mappingWorkbookUrl,\r\n      originHint: destinationOrigin,\r\n      expectedType: 'file',\r\n    },\r\n  },\r\n];"
+      },
+      "id": "d3c4ca54-96b6-4c9d-9830-5c9b7d8a1a8e",
+      "name": "Build Resolve Queue1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputs = $input.all();\r\nconst output = [];\r\n\r\nconst normalizeSharePointUrl = (value, originHint = '') => {\r\n  const raw = String(value ?? '')\r\n    .trim()\r\n    .replace(/^['\"]+|['\"]+$/g, '');\r\n\r\n  if (!raw) {\r\n    return '';\r\n  }\r\n\r\n  if (/^https?:\\/\\//i.test(raw)) {\r\n    return raw;\r\n  }\r\n\r\n  if (/^\\/\\//.test(raw)) {\r\n    return 'https:' + raw;\r\n  }\r\n\r\n  if (/^[^/\\s]+\\.sharepoint\\.com(\\/|$)/i.test(raw)) {\r\n    return 'https://' + raw;\r\n  }\r\n\r\n  if (originHint && (/^\\//.test(raw) || /^(sites|teams)\\//i.test(raw) || /^:[^/]+:\\/r\\//i.test(raw))) {\r\n    const normalizedPath = raw.startsWith('/') ? raw : '/' + raw;\r\n    return originHint + normalizedPath;\r\n  }\r\n\r\n  return raw;\r\n};\r\n\r\nconst parseAbsoluteUrl = (value) => {\r\n  const raw = String(value ?? '').trim();\r\n  const match = /^(https?):\\/\\/([^/?#]+)([^?#]*)?(\\?[^#]*)?(#.*)?$/i.exec(raw);\r\n\r\n  if (!match) {\r\n    return null;\r\n  }\r\n\r\n  const query = {};\r\n  const search = match[4] || '';\r\n\r\n  if (search.startsWith('?')) {\r\n    for (const part of search.slice(1).split('&').filter(Boolean)) {\r\n      const separatorIndex = part.indexOf('=');\r\n      const keyPart = separatorIndex >= 0 ? part.slice(0, separatorIndex) : part;\r\n      const valuePart = separatorIndex >= 0 ? part.slice(separatorIndex + 1) : '';\r\n      const key = decodeURIComponent(keyPart.replace(/\\+/g, ' '));\r\n\r\n      if (!(key in query)) {\r\n        query[key] = decodeURIComponent(valuePart.replace(/\\+/g, ' '));\r\n      }\r\n    }\r\n  }\r\n\r\n  return {\r\n    protocol: match[1].toLowerCase(),\r\n    hostname: String(match[2]).split(':')[0].toLowerCase(),\r\n    pathname: match[3] || '/',\r\n    query,\r\n  };\r\n};\r\n\r\nconst stripSpecialShareLinkPrefix = (path) => {\r\n  const segments = String(path ?? '')\r\n    .split('/')\r\n    .filter(Boolean)\r\n    .map((segment) => decodeURIComponent(segment));\r\n\r\n  if (segments.length >= 3 && segments[0].startsWith(':') && segments[1].toLowerCase() === 'r') {\r\n    return '/' + segments.slice(2).join('/');\r\n  }\r\n\r\n  return String(path ?? '');\r\n};\r\n\r\nconst cleanItemSegments = (segments) => {\r\n  let normalized = [...segments];\r\n  const aspxIndex = normalized.findIndex((segment) => /\\.aspx$/i.test(segment));\r\n\r\n  if (aspxIndex >= 0) {\r\n    normalized = normalized.slice(0, aspxIndex);\r\n  }\r\n\r\n  if (normalized.length > 0 && /^forms$/i.test(normalized[normalized.length - 1])) {\r\n    normalized = normalized.slice(0, -1);\r\n  }\r\n\r\n  if (normalized.length > 0 && /^forms$/i.test(normalized[0])) {\r\n    normalized = [];\r\n  }\r\n\r\n  return normalized;\r\n};\r\n\r\nfor (const inputItem of inputs) {\r\n  const source = inputItem.json;\r\n  const normalizedUrlText = normalizeSharePointUrl(source.sharePointUrl, source.originHint);\r\n  const inputUrl = parseAbsoluteUrl(normalizedUrlText);\r\n\r\n  if (!inputUrl) {\r\n    throw new Error('sharePointUrl is not a valid URL for ' + source.kind + '. Received: ' + JSON.stringify(normalizedUrlText || String(source.sharePointUrl ?? '')) + '.');\r\n  }\r\n\r\n  const hostname = inputUrl.hostname;\r\n  if (!/\\.sharepoint\\.com$/i.test(hostname)) {\r\n    throw new Error('sharePointUrl for ' + source.kind + ' must point to a SharePoint Online host. Received host: ' + JSON.stringify(hostname) + '.');\r\n  }\r\n\r\n  let serverRelativePath = '';\r\n\r\n  for (const key of ['id', 'RootFolder']) {\r\n    const value = inputUrl.query[key];\r\n    if (value) {\r\n      serverRelativePath = stripSpecialShareLinkPrefix(decodeURIComponent(value));\r\n      break;\r\n    }\r\n  }\r\n\r\n  if (!serverRelativePath) {\r\n    serverRelativePath = stripSpecialShareLinkPrefix(decodeURIComponent(inputUrl.pathname || '/'));\r\n  }\r\n\r\n  serverRelativePath = serverRelativePath\r\n    .replace(/\\\\/g, '/')\r\n    .replace(/\\/+/g, '/')\r\n    .replace(/\\/$/, '');\r\n\r\n  if (!serverRelativePath.startsWith('/')) {\r\n    serverRelativePath = '/' + serverRelativePath;\r\n  }\r\n\r\n  const segments = cleanItemSegments(serverRelativePath.split('/').filter(Boolean));\r\n  if (!segments.length) {\r\n    throw new Error('Could not determine the SharePoint path for ' + source.kind + '.');\r\n  }\r\n\r\n  const seen = new Set();\r\n\r\n  const addCandidate = (siteParts, withinSite) => {\r\n    if (!withinSite.length) {\r\n      return;\r\n    }\r\n\r\n    const libraryName = decodeURIComponent(withinSite[0]);\r\n    const folderRelativePath = withinSite\r\n      .slice(1)\r\n      .map((segment) => decodeURIComponent(segment))\r\n      .join('/');\r\n\r\n    const candidateSitePath = siteParts.length ? '/' + siteParts.join('/') : '';\r\n    const siteResolveUrl = candidateSitePath\r\n      ? 'https://graph.microsoft.com/v1.0/sites/' + hostname + ':' + candidateSitePath\r\n      : 'https://graph.microsoft.com/v1.0/sites/' + hostname;\r\n\r\n    const candidateKey = [source.kind, candidateSitePath, libraryName, folderRelativePath].join('|');\r\n    if (seen.has(candidateKey)) {\r\n      return;\r\n    }\r\n\r\n    seen.add(candidateKey);\r\n    output.push({\r\n      json: {\r\n        ...source,\r\n        hostname,\r\n        serverRelativePath,\r\n        candidateSitePath,\r\n        siteResolveUrl,\r\n        libraryName,\r\n        folderRelativePath,\r\n      },\r\n    });\r\n  };\r\n\r\n  if (/^(sites|teams)$/i.test(segments[0])) {\r\n    if (segments.length < 3) {\r\n      throw new Error('The SharePoint URL for ' + source.kind + ' must include a site path and a document library.');\r\n    }\r\n\r\n    for (let siteLength = segments.length - 1; siteLength >= 2; siteLength--) {\r\n      addCandidate(segments.slice(0, siteLength), segments.slice(siteLength));\r\n    }\r\n  } else {\r\n    addCandidate([], segments);\r\n  }\r\n}\r\n\r\nif (!output.length) {\r\n  throw new Error('No candidate SharePoint paths could be built from the configured URLs.');\r\n}\r\n\r\nreturn output;"
+      },
+      "id": "5ba8171a-1064-4c3a-8ea4-3d54362e73aa",
+      "name": "Parse SharePoint URL1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.siteResolveUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "3ba03c1c-e090-41d2-b149-01cc674fcdcd",
+      "name": "Resolve Site Candidates1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.all();\r\nconst candidates = $('Parse SharePoint URL1').all();\r\nconst resolvedByKind = new Map();\r\n\r\nfor (let index = 0; index < responses.length; index++) {\r\n  const response = responses[index].json;\r\n  const candidate = candidates[index].json;\r\n\r\n  if (resolvedByKind.has(candidate.kind)) {\r\n    continue;\r\n  }\r\n\r\n  if (response.statusCode >= 200 && response.statusCode < 300 && response.body && response.body.id) {\r\n    resolvedByKind.set(candidate.kind, {\r\n      json: {\r\n        ...candidate,\r\n        siteId: response.body.id,\r\n        siteName: response.body.displayName || response.body.name || '',\r\n        siteWebUrl: response.body.webUrl || '',\r\n      },\r\n    });\r\n  }\r\n}\r\n\r\nfor (const kind of ['source', 'destinationRoot', 'workbook']) {\r\n  if (!resolvedByKind.has(kind)) {\r\n    throw new Error('None of the candidate SharePoint site paths resolved for ' + kind + '.');\r\n  }\r\n}\r\n\r\nreturn ['source', 'destinationRoot', 'workbook'].map((kind) => resolvedByKind.get(kind));"
+      },
+      "id": "0f73499f-878a-461b-889f-a29662d486bb",
+      "name": "Select Resolved Targets1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://graph.microsoft.com/v1.0/sites/' + $json.siteId + '/drives?$select=id,name,webUrl,driveType' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "0605846f-f334-458c-a3f8-cc0684ee85c9",
+      "name": "List Drives1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sites = $('Select Resolved Targets1').all();\r\nconst payloads = $input.all();\r\n\r\nconst normalize = (value = '') => decodeURIComponent(String(value))\r\n  .replace(/%20/gi, ' ')\r\n  .toLowerCase()\r\n  .replace(/\\s+/g, ' ')\r\n  .trim();\r\n\r\nconst getUrlPathname = (value = '') => {\r\n  const match = /^(https?):\\/\\/([^/?#]+)([^?#]*)?(\\?[^#]*)?(#.*)?$/i.exec(String(value ?? '').trim());\r\n  return match ? (match[3] || '/') : '';\r\n};\r\n\r\nreturn payloads.map((payloadItem, index) => {\r\n  const site = sites[index].json;\r\n  const drives = Array.isArray(payloadItem.json.value) ? payloadItem.json.value : [];\r\n\r\n  if (!drives.length) {\r\n    throw new Error('No document libraries were returned for ' + site.kind + '.');\r\n  }\r\n\r\n  const targetLibrary = normalize(site.libraryName);\r\n  const serverRelativePath = normalize(site.serverRelativePath);\r\n\r\n  const scoreDrive = (drive) => {\r\n    const driveName = normalize(drive.name);\r\n    const pathSegments = getUrlPathname(drive.webUrl || '').split('/').filter(Boolean);\r\n    const lastSegment = normalize(pathSegments[pathSegments.length - 1] || '');\r\n\r\n    let score = 0;\r\n    if (driveName === targetLibrary) score = 100;\r\n    if (lastSegment === targetLibrary) score = Math.max(score, 90);\r\n    if (serverRelativePath.includes('/' + driveName + '/')) score = Math.max(score, 80);\r\n    if (serverRelativePath.endsWith('/' + driveName)) score = Math.max(score, 80);\r\n\r\n    return score;\r\n  };\r\n\r\n  const ranked = drives\r\n    .map((drive) => ({ drive, score: scoreDrive(drive) }))\r\n    .sort((left, right) => right.score - left.score);\r\n\r\n  if (!ranked.length || ranked[0].score <= 0) {\r\n    throw new Error('Could not match document library ' + JSON.stringify(site.libraryName) + ' for ' + site.kind + '.');\r\n  }\r\n\r\n  const selected = ranked[0].drive;\r\n\r\n  return {\r\n    json: {\r\n      ...site,\r\n      driveId: selected.id,\r\n      driveName: selected.name,\r\n      driveWebUrl: selected.webUrl || '',\r\n    },\r\n  };\r\n});"
+      },
+      "id": "01bde245-5da9-4126-bb65-216590ae55c7",
+      "name": "Pick Drive1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.folderRelativePath ? ('https://graph.microsoft.com/v1.0/drives/' + $json.driveId + '/root:/' + $json.folderRelativePath.split('/').map((segment) => encodeURIComponent(segment)).join('/')) : ('https://graph.microsoft.com/v1.0/drives/' + $json.driveId + '/root') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a7781e55-1b51-4d26-96ab-03129da570b8",
+      "name": "Resolve Target Items1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2448,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resolvedItems = $input.all();\r\nconst contexts = $('Pick Drive1').all();\r\nconst config = $('Config1').first().json;\r\n\r\nconst firstNonEmpty = (...values) => {\r\n  for (const value of values) {\r\n    const normalized = String(value ?? '').trim();\r\n    if (normalized) {\r\n      return normalized;\r\n    }\r\n  }\r\n\r\n  return '';\r\n};\r\n\r\nconst result = {};\r\n\r\nfor (let index = 0; index < resolvedItems.length; index++) {\r\n  const context = contexts[index].json;\r\n  const item = resolvedItems[index].json;\r\n  const isFile = !!item.file;\r\n  const isFolder = !!item.folder;\r\n\r\n  if (context.expectedType === 'file' && !isFile) {\r\n    throw new Error(context.kind + ' must resolve to a file.');\r\n  }\r\n\r\n  if (context.expectedType === 'folder' && !isFolder) {\r\n    throw new Error(context.kind + ' must resolve to a folder.');\r\n  }\r\n\r\n  result[context.kind] = {\r\n    sourceUrl: context.sharePointUrl,\r\n    siteId: context.siteId,\r\n    siteName: context.siteName,\r\n    driveId: context.driveId,\r\n    driveName: context.driveName,\r\n    itemId: item.id,\r\n    itemName: item.name,\r\n    webUrl: item.webUrl || '',\r\n    isFile,\r\n    isFolder,\r\n  };\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    source: result.source,\r\n    destinationRoot: result.destinationRoot,\r\n    workbook: result.workbook,\r\n    dryRun: Boolean(config.dryRun),\r\n    targetFileNameOverride: firstNonEmpty(config.targetFileName) || null,\r\n  },\r\n}];"
+      },
+      "id": "ea4485b8-e314-45fd-a6b9-923dbdb78e82",
+      "name": "Build Runtime1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\nconst fileName = String(item.source.itemName || '');\r\nconst extensionMatch = /\\.[^.]+$/.exec(fileName);\r\nconst sourceExtension = extensionMatch ? extensionMatch[0].toLowerCase() : '';\r\n\r\nconst textLike = new Set(['.txt', '.csv', '.json', '.xml']);\r\nconst imageLike = new Set(['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif', '.webp']);\r\n\r\nlet extractOperation = null;\r\nlet extractionStatus = 'native';\r\nlet extractionMessage = null;\r\nlet earlyStatus = null;\r\nlet ocrPending = false;\r\n\r\nif (textLike.has(sourceExtension)) {\r\n  extractOperation = 'text';\r\n} else if (sourceExtension === '.pdf') {\r\n  extractOperation = 'pdf';\r\n} else if (sourceExtension === '.docx') {\r\n  extractOperation = 'pdf';\r\n} else if (imageLike.has(sourceExtension)) {\r\n  extractionStatus = 'ocr_required';\r\n  extractionMessage = 'The source file is an image and needs OCR.';\r\n  earlyStatus = 'ocr_required';\r\n  ocrPending = true;\r\n} else {\r\n  extractionStatus = 'unsupported';\r\n  extractionMessage = 'The file extension ' + JSON.stringify(sourceExtension || '<none>') + ' is not supported without OCR.';\r\n  earlyStatus = 'unsupported';\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...item,\r\n    sourceExtension,\r\n    extractOperation,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    earlyStatus,\r\n    ocrPending,\r\n  },\r\n}];"
+      },
+      "id": "98c6eef2-4d54-470a-a767-1e36d007c285",
+      "name": "Prepare Extraction1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.earlyStatus ? [item] : [];"
+      },
+      "id": "75da0d49-7347-4878-b69e-967d74d2c282",
+      "name": "Pass Early Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: item.earlyStatus,\r\n    sourceFileUrl: item.source.sourceUrl,\r\n    sourceFileName: item.source.itemName,\r\n    sourceExtension: item.sourceExtension,\r\n    dryRun: item.dryRun,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    extractedTextPreview: null,\r\n    ocrPending: item.ocrPending,\r\n    matchType: null,\r\n    matchValue: null,\r\n    matchMessage: null,\r\n    company: null,\r\n    destination: null,\r\n  },\r\n}];"
+      },
+      "id": "5c6244c6-3788-45a3-8193-eb467aa7a73d",
+      "name": "Finalize Early Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.earlyStatus ? [] : [item];"
+      },
+      "id": "f3aaa1f0-8037-4765-b51a-6958a8613509",
+      "name": "Pass Extractable1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $json.source.driveId + '/items/' + $json.source.itemId + '/content' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "03d4d6d0-f839-45f3-834c-d89a7a24a8b0",
+      "name": "Download Original Source Content1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3424,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const runtime = $('Pass Extractable1').first().json;\r\nconst downloaded = $input.first();\r\n\r\nreturn [{\r\n  json: {\r\n    ...runtime,\r\n  },\r\n  binary: downloaded.binary,\r\n}];"
+      },
+      "id": "6a13d240-8172-4bfc-a847-ecc8d58eb087",
+      "name": "Attach Original Source Context1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn ['.txt', '.csv', '.json', '.xml', '.pdf'].includes(item.json.sourceExtension) ? [item] : [];"
+      },
+      "id": "ea41bbec-d41c-4dbd-b157-2a97da7a3586",
+      "name": "Pass Direct Extraction Files1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "={{ $json.extractOperation }}",
+        "options": {
+          "joinPages": true,
+          "keepSource": "both",
+          "maxPages": 0
+        },
+        "destinationKey": "extractedText"
+      },
+      "id": "14a8f4c2-8e42-4eb4-a4aa-b3d28a01fae4",
+      "name": "Extract Direct Native Text1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        4144,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.sourceExtension === '.docx' ? [item] : [];"
+      },
+      "id": "2796857a-afd8-471b-9682-77679aae1fbb",
+      "name": "Pass Docx Files1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $json.source.driveId + '/items/' + $json.source.itemId + '/content?format=pdf' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "9f6e41c0-6737-49ab-8bb2-55c754dd5a65",
+      "name": "Download Source As Pdf1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4144,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const runtime = $('Attach Original Source Context1').first().json;\r\nconst downloaded = $input.first();\r\n\r\nreturn [{\r\n  json: {\r\n    ...runtime,\r\n  },\r\n  binary: downloaded.binary,\r\n}];"
+      },
+      "id": "41ace38a-bf9b-4fcf-ab86-ad3cc5808d90",
+      "name": "Attach Docx Pdf Context1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4384,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "joinPages": true,
+          "keepSource": "both",
+          "maxPages": 0
+        }
+      },
+      "id": "16fb57e8-f6f2-43f5-a71b-c8293d44b86d",
+      "name": "Extract Docx Pdf Text1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        4624,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nconst json = item.json;\r\n\r\nconst candidateText = typeof json.text === 'string'\r\n  ? json.text\r\n  : typeof json.extractedText === 'string'\r\n    ? json.extractedText\r\n    : '';\r\n\r\nconst extractedText = candidateText.trim();\r\n\r\nlet extractionStatus = 'native';\r\nlet extractionMessage = null;\r\nlet ocrPending = false;\r\nlet postExtractionStatus = null;\r\n\r\nif (!extractedText) {\r\n  if (json.extractOperation === 'pdf') {\r\n    extractionStatus = 'ocr_required';\r\n    extractionMessage = 'The PDF does not expose any native text and needs OCR.';\r\n    ocrPending = true;\r\n    postExtractionStatus = 'ocr_required';\r\n  } else {\r\n    extractionStatus = 'unsupported';\r\n    extractionMessage = 'The source text file is empty.';\r\n    postExtractionStatus = 'unsupported';\r\n  }\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...json,\r\n    extractedText: extractedText || null,\r\n    extractedTextPreview: extractedText ? extractedText.slice(0, 500) : null,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    ocrPending,\r\n    postExtractionStatus,\r\n  },\r\n}];"
+      },
+      "id": "0ba3d2c1-edfa-40de-8dfa-2beae9eea3dd",
+      "name": "Normalize Extraction1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4864,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.postExtractionStatus ? [item] : [];"
+      },
+      "id": "c6df5154-264b-4571-a091-4726659171ed",
+      "name": "Pass Post Extraction Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5104,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: item.postExtractionStatus,\r\n    sourceFileUrl: item.source.sourceUrl,\r\n    sourceFileName: item.source.itemName,\r\n    sourceExtension: item.sourceExtension,\r\n    dryRun: item.dryRun,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    extractedTextPreview: item.extractedTextPreview,\r\n    ocrPending: item.ocrPending,\r\n    matchType: null,\r\n    matchValue: null,\r\n    matchMessage: null,\r\n    company: null,\r\n    destination: null,\r\n  },\r\n}];"
+      },
+      "id": "7e32ecf4-1ad1-4244-bb32-a9e42fb925ed",
+      "name": "Finalize Post Extraction Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5344,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.postExtractionStatus ? [] : [item];"
+      },
+      "id": "f5ac691b-5f9a-4e50-a447-82be73f78e22",
+      "name": "Pass Post Extraction Continue1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5104,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $json.workbook.driveId + '/items/' + $json.workbook.itemId + '/content' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "532ddec7-5ccb-4a93-a5c2-68fc57546dfc",
+      "name": "Download Workbook Binary1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5344,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const runtime = $('Pass Post Extraction Continue1').first().json;\r\nconst downloaded = $input.first();\r\n\r\nreturn [{\r\n  json: {\r\n    ...runtime,\r\n  },\r\n  binary: downloaded.binary,\r\n}];"
+      },
+      "id": "638ec8b1-d9e2-48ff-a02b-07ce09d9fa2d",
+      "name": "Attach Workbook Context1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5584,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "headerRow": true,
+          "includeEmptyCells": false,
+          "rawData": false,
+          "sheetName": "Folha1"
+        }
+      },
+      "id": "11f45e91-b276-425b-b44a-b5c7cc71e1c9",
+      "name": "Extract Workbook Rows1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        5824,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\r\nif (!rows.length) {\r\n  throw new Error('The mapping workbook did not produce any rows.');\r\n}\r\n\r\nconst source = rows[0].json;\r\n\r\nconst normalizeHeader = (value = '') => String(value)\r\n  .normalize('NFD')\r\n  .replace(/[\\u0300-\\u036f]/g, '')\r\n  .replace(/[^0-9A-Za-z\\s]/g, ' ')\r\n  .replace(/\\s+/g, ' ')\r\n  .trim()\r\n  .toUpperCase();\r\n\r\nconst parseBoolean = (value) => ['SIM', 'YES', 'TRUE', '1'].includes(normalizeHeader(value));\r\nconst nullIfWhiteSpace = (value) => {\r\n  const normalized = String(value ?? '').trim();\r\n  return normalized || null;\r\n};\r\n\r\nconst folderHeaders = [\r\n  'Nome da pasta',\r\n  'Nome pasta',\r\n  'Pasta',\r\n  'Pasta destino',\r\n  'Nome da pasta SharePoint',\r\n  'Nome da pasta no SharePoint',\r\n  'Folder name',\r\n].map(normalizeHeader);\r\n\r\nconst entries = [];\r\n\r\nfor (const rowItem of rows) {\r\n  const lookup = {};\r\n  for (const [key, value] of Object.entries(rowItem.json)) {\r\n    lookup[normalizeHeader(key)] = value;\r\n  }\r\n\r\n  const acronym = String(lookup['SIGLA'] ?? '').trim();\r\n  const clientName = String(lookup['NOME DO CLIENTE'] ?? '').trim();\r\n  const nipc = String(lookup['NIPC NOSSO CLIENTE'] ?? '').trim();\r\n\r\n  if (!acronym || !clientName || !nipc) {\r\n    continue;\r\n  }\r\n\r\n  let folderName = null;\r\n  for (const header of folderHeaders) {\r\n    const candidate = nullIfWhiteSpace(lookup[header]);\r\n    if (candidate) {\r\n      folderName = candidate;\r\n      break;\r\n    }\r\n  }\r\n\r\n  entries.push({\r\n    acronym,\r\n    clientName,\r\n    nipc,\r\n    hasFolder: parseBoolean(lookup['CLIENTE TEM PASTA']),\r\n    email: nullIfWhiteSpace(lookup['EMAIL']),\r\n    folderName,\r\n  });\r\n}\r\n\r\nif (!entries.length) {\r\n  throw new Error('The mapping workbook does not contain any valid company rows.');\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    source: source.source,\r\n    destinationRoot: source.destinationRoot,\r\n    workbook: source.workbook,\r\n    dryRun: source.dryRun,\r\n    targetFileNameOverride: source.targetFileNameOverride,\r\n    sourceExtension: source.sourceExtension,\r\n    extractOperation: source.extractOperation,\r\n    extractionStatus: source.extractionStatus,\r\n    extractionMessage: source.extractionMessage,\r\n    ocrPending: source.ocrPending,\r\n    extractedText: source.extractedText,\r\n    extractedTextPreview: source.extractedTextPreview,\r\n    companyMappings: entries,\r\n  },\r\n}];"
+      },
+      "id": "dd5535fc-34ef-4970-b76b-94115f23046e",
+      "name": "Normalize Workbook1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6064,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\nconst entries = Array.isArray(item.companyMappings) ? item.companyMappings : [];\r\n\r\nif (!entries.length) {\r\n  throw new Error('The mapping workbook does not contain any company rows.');\r\n}\r\n\r\nconst normalize = (value = '') => String(value)\r\n  .normalize('NFD')\r\n  .replace(/[\\u0300-\\u036f]/g, '')\r\n  .replace(/\\s+/g, ' ')\r\n  .trim()\r\n  .toUpperCase();\r\n\r\nconst escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\r\nconst fileNameWithoutExtension = String(item.source.itemName || '').replace(/\\.[^.]+$/, '');\r\nconst candidateText = [item.extractedText || '', fileNameWithoutExtension].filter(Boolean).join('\\n');\r\nconst normalizedText = normalize(candidateText);\r\n\r\nlet company = null;\r\nlet matchType = 'none';\r\nlet matchValue = null;\r\nlet matchMessage = null;\r\nlet matchStatus = null;\r\n\r\nif (!normalizedText) {\r\n  matchMessage = 'The source document did not produce any searchable text.';\r\n  matchStatus = 'unmatched';\r\n} else {\r\n  const nipcMatches = entries.filter((entry) => new RegExp('(^|[^0-9])' + escapeRegex(entry.nipc) + '(?=[^0-9]|$)').test(normalizedText));\r\n  if (nipcMatches.length === 1) {\r\n    company = nipcMatches[0];\r\n    matchType = 'nipc';\r\n    matchValue = company.nipc;\r\n  } else if (nipcMatches.length > 1) {\r\n    matchType = 'nipc';\r\n    matchMessage = 'The document matched multiple NIPC values.';\r\n    matchStatus = 'unmatched';\r\n  }\r\n\r\n  if (!company && !matchStatus) {\r\n    const nameMatches = entries\r\n      .filter((entry) => normalizedText.includes(normalize(entry.clientName)))\r\n      .sort((left, right) => right.clientName.length - left.clientName.length);\r\n\r\n    if (nameMatches.length === 1) {\r\n      company = nameMatches[0];\r\n      matchType = 'client_name';\r\n      matchValue = company.clientName;\r\n    } else if (nameMatches.length > 1 && nameMatches[0].clientName.length !== nameMatches[1].clientName.length) {\r\n      company = nameMatches[0];\r\n      matchType = 'client_name';\r\n      matchValue = company.clientName;\r\n    } else if (nameMatches.length > 1) {\r\n      matchType = 'client_name';\r\n      matchMessage = 'The document matched multiple client names.';\r\n      matchStatus = 'unmatched';\r\n    }\r\n  }\r\n\r\n  if (!company && !matchStatus) {\r\n    const acronymMatches = entries.filter((entry) => new RegExp('(^|[^A-Z0-9])' + escapeRegex(normalize(entry.acronym)) + '(?=[^A-Z0-9]|$)').test(normalizedText));\r\n\r\n    if (acronymMatches.length === 1) {\r\n      company = acronymMatches[0];\r\n      matchType = 'acronym';\r\n      matchValue = company.acronym;\r\n    } else if (acronymMatches.length > 1) {\r\n      matchType = 'acronym';\r\n      matchMessage = 'The document matched multiple acronyms.';\r\n      matchStatus = 'unmatched';\r\n    }\r\n  }\r\n\r\n  if (!company && !matchStatus) {\r\n    matchMessage = 'The document text did not match any acronym, client name, or NIPC from the workbook.';\r\n    matchStatus = 'unmatched';\r\n  }\r\n\r\n  if (company && !company.hasFolder) {\r\n    matchStatus = 'company_has_no_folder';\r\n  }\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    source: item.source,\r\n    destinationRoot: item.destinationRoot,\r\n    workbook: item.workbook,\r\n    dryRun: item.dryRun,\r\n    targetFileNameOverride: item.targetFileNameOverride,\r\n    sourceExtension: item.sourceExtension,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    ocrPending: item.ocrPending,\r\n    extractedTextPreview: item.extractedTextPreview,\r\n    matchType,\r\n    matchValue,\r\n    matchMessage,\r\n    matchStatus,\r\n    company,\r\n  },\r\n}];"
+      },
+      "id": "d738259d-0036-4e47-b79b-ee2e59a2f03b",
+      "name": "Match Company1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6304,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.matchStatus ? [item] : [];"
+      },
+      "id": "e9f45589-bfe6-4874-a17f-a671c779b069",
+      "name": "Pass Match Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6544,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: item.matchStatus,\r\n    sourceFileUrl: item.source.sourceUrl,\r\n    sourceFileName: item.source.itemName,\r\n    sourceExtension: item.sourceExtension,\r\n    dryRun: item.dryRun,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    extractedTextPreview: item.extractedTextPreview,\r\n    ocrPending: item.ocrPending,\r\n    matchType: item.matchType,\r\n    matchValue: item.matchValue,\r\n    matchMessage: item.matchMessage,\r\n    company: item.company,\r\n    destination: null,\r\n  },\r\n}];"
+      },
+      "id": "d26bd5e1-4b5f-41d1-a296-67eb4eabe0d3",
+      "name": "Finalize Match Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6784,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.matchStatus ? [] : [item];"
+      },
+      "id": "73e6c95e-7776-4a10-9545-c721e4b136a1",
+      "name": "Pass Match Continue1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6544,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $json.destinationRoot.driveId + '/items/' + $json.destinationRoot.itemId + '/children?$select=id,name,webUrl,folder,file' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "c4d8ec01-bc03-4531-8414-09f4e86fa526",
+      "name": "List Destination Children1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6784,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\r\nconst item = $('Pass Match Continue1').first().json;\r\nconst children = Array.isArray(payload.value) ? payload.value : [];\r\nconst expectedPrefix = item.company.acronym + '_' + item.company.nipc + '_';\r\n\r\nconst destinationFolder = children\r\n  .filter((child) => !!child.folder)\r\n  .find((child) => String(child.name || '').toLowerCase().startsWith(expectedPrefix.toLowerCase())) || null;\r\n\r\nreturn [{\r\n  json: {\r\n    ...item,\r\n    destinationFolder,\r\n    folderStatus: destinationFolder ? null : 'folder_not_found',\r\n  },\r\n}];"
+      },
+      "id": "bc05ea7c-f959-41a9-8fcf-e5ca87dc8dbf",
+      "name": "Resolve Destination Folder1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7024,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.folderStatus ? [item] : [];"
+      },
+      "id": "9fdbcf4b-b273-4605-a7ee-0e912bda2bec",
+      "name": "Pass Folder Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7264,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: item.folderStatus,\r\n    sourceFileUrl: item.source.sourceUrl,\r\n    sourceFileName: item.source.itemName,\r\n    sourceExtension: item.sourceExtension,\r\n    dryRun: item.dryRun,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    extractedTextPreview: item.extractedTextPreview,\r\n    ocrPending: item.ocrPending,\r\n    matchType: item.matchType,\r\n    matchValue: item.matchValue,\r\n    matchMessage: item.matchMessage,\r\n    company: item.company,\r\n    destination: null,\r\n  },\r\n}];"
+      },
+      "id": "e79245c1-4609-4823-8398-748d37a9fb15",
+      "name": "Finalize Folder Exit1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7504,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.folderStatus ? [] : [item];"
+      },
+      "id": "5bfd9ca2-14d9-429c-9793-b749f0c95f04",
+      "name": "Pass Folder Continue1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7264,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\nconst originalBinaryItem = $('Attach Original Source Context1').first();\r\n\r\nconst firstNonEmpty = (...values) => {\r\n  for (const value of values) {\r\n    const normalized = String(value ?? '').trim();\r\n    if (normalized) {\r\n      return normalized;\r\n    }\r\n  }\r\n\r\n  return '';\r\n};\r\n\r\nconst sanitizeCharacter = (character) => {\r\n  return ['~', '\"', '#', '%', '&', '*', ':', '<', '>', '?', '/', '\\\\', '{', '|', '}'].includes(character)\r\n    ? '_'\r\n    : character;\r\n};\r\n\r\nconst getExtension = (value = '') => {\r\n  const match = /\\.[^.]+$/.exec(String(value));\r\n  return match ? match[0] : '';\r\n};\r\n\r\nconst getFileNameWithoutExtension = (value = '') => {\r\n  const extension = getExtension(value);\r\n  return extension ? String(value).slice(0, -extension.length) : String(value);\r\n};\r\n\r\nconst buildDefaultTargetPrefix = (company) => {\r\n  const preferredPrefix = firstNonEmpty(company.folderName, company.clientName, company.acronym + '_' + company.nipc);\r\n  const withUnderscores = preferredPrefix.split(/\\s+/).filter(Boolean).join('_');\r\n  const sanitized = [...withUnderscores].map(sanitizeCharacter).join('').replace(/^_+|_+$/g, '');\r\n  return sanitized || (company.acronym + '_' + company.nipc);\r\n};\r\n\r\nconst buildTargetFileName = (company, sourceFileName, overrideFileName) => {\r\n  const requestedFileName = firstNonEmpty(overrideFileName)\r\n    ? String(overrideFileName).trim()\r\n    : buildDefaultTargetPrefix(company) + '_' + String(sourceFileName);\r\n\r\n  const extension = getExtension(requestedFileName);\r\n  let baseName = [...getFileNameWithoutExtension(requestedFileName)].map(sanitizeCharacter).join('').trim();\r\n\r\n  if (!baseName) {\r\n    baseName = buildDefaultTargetPrefix(company);\r\n  }\r\n\r\n  return baseName + extension;\r\n};\r\n\r\nconst contentTypeMap = {\r\n  '.pdf': 'application/pdf',\r\n  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\r\n  '.txt': 'text/plain',\r\n  '.csv': 'text/csv',\r\n};\r\n\r\nconst targetFileName = buildTargetFileName(item.company, item.source.itemName, item.targetFileNameOverride);\r\n\r\nreturn [{\r\n  json: {\r\n    ...item,\r\n    targetFileName,\r\n    sourceContentType: contentTypeMap[item.sourceExtension] || 'application/octet-stream',\r\n    destination: {\r\n      rootFolderUrl: item.destinationRoot.sourceUrl,\r\n      folderName: item.destinationFolder.name,\r\n      folderUrl: item.destinationFolder.webUrl || '',\r\n      targetFileName,\r\n    },\r\n  },\r\n  binary: originalBinaryItem.binary,\r\n}];"
+      },
+      "id": "e8d98dd0-f01a-4c81-9a37-52ab6ab899bc",
+      "name": "Build Output Plan1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7504,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.dryRun ? [item] : [];"
+      },
+      "id": "bbf25e8c-9048-4a59-88a2-098d0758b7b3",
+      "name": "Pass Preview1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7744,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: 'preview_ready',\r\n    sourceFileUrl: item.source.sourceUrl,\r\n    sourceFileName: item.source.itemName,\r\n    sourceExtension: item.sourceExtension,\r\n    dryRun: item.dryRun,\r\n    extractionStatus: item.extractionStatus,\r\n    extractionMessage: item.extractionMessage,\r\n    extractedTextPreview: item.extractedTextPreview,\r\n    ocrPending: item.ocrPending,\r\n    matchType: item.matchType,\r\n    matchValue: item.matchValue,\r\n    matchMessage: item.matchMessage,\r\n    company: item.company,\r\n    destination: {\r\n      ...item.destination,\r\n      createdFileUrl: null,\r\n    },\r\n  },\r\n}];"
+      },
+      "id": "b27d94c7-1c64-42f5-ace7-d9b2edee40dd",
+      "name": "Finalize Preview1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7984,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\r\nreturn item.json.dryRun ? [] : [item];"
+      },
+      "id": "4f82ed7e-1b1f-4111-8dc7-7d7a2060e115",
+      "name": "Pass Copy1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7744,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://graph.microsoft.com/v1.0/drives/' + $json.destinationRoot.driveId + '/items/' + $json.destinationFolder.id + ':/' + encodeURIComponent($json.targetFileName) + ':/content' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Get Microsoft Token1').first().json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.sourceContentType }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "03278861-1e10-4393-ac11-49b10498ade2",
+      "name": "Upload File1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7984,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const plan = $('Pass Copy1').first().json;\r\nconst created = $input.first().json;\r\n\r\nreturn [{\r\n  json: {\r\n    status: 'copied',\r\n    sourceFileUrl: plan.source.sourceUrl,\r\n    sourceFileName: plan.source.itemName,\r\n    sourceExtension: plan.sourceExtension,\r\n    dryRun: plan.dryRun,\r\n    extractionStatus: plan.extractionStatus,\r\n    extractionMessage: plan.extractionMessage,\r\n    extractedTextPreview: plan.extractedTextPreview,\r\n    ocrPending: plan.ocrPending,\r\n    matchType: plan.matchType,\r\n    matchValue: plan.matchValue,\r\n    matchMessage: plan.matchMessage,\r\n    company: plan.company,\r\n    destination: {\r\n      ...plan.destination,\r\n      createdFileUrl: created.webUrl || null,\r\n    },\r\n  },\r\n}];"
+      },
+      "id": "8d6f2464-c049-4f01-a116-b775e7ea9f65",
+      "name": "Finalize Copied1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8224,
+        1024
+      ]
+    }
+  ],
+  "connections": {
+    "Config1": {
+      "main": [
+        [
+          {
+            "node": "Get Microsoft Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Microsoft Token1": {
+      "main": [
+        [
+          {
+            "node": "Build Resolve Queue1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Resolve Queue1": {
+      "main": [
+        [
+          {
+            "node": "Parse SharePoint URL1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse SharePoint URL1": {
+      "main": [
+        [
+          {
+            "node": "Resolve Site Candidates1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Site Candidates1": {
+      "main": [
+        [
+          {
+            "node": "Select Resolved Targets1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Resolved Targets1": {
+      "main": [
+        [
+          {
+            "node": "List Drives1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Drives1": {
+      "main": [
+        [
+          {
+            "node": "Pick Drive1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Drive1": {
+      "main": [
+        [
+          {
+            "node": "Resolve Target Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Target Items1": {
+      "main": [
+        [
+          {
+            "node": "Build Runtime1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Runtime1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Extraction1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Extraction1": {
+      "main": [
+        [
+          {
+            "node": "Pass Early Exit1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Extractable1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Early Exit1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Early Exit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Extractable1": {
+      "main": [
+        [
+          {
+            "node": "Download Original Source Content1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Original Source Content1": {
+      "main": [
+        [
+          {
+            "node": "Attach Original Source Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Original Source Context1": {
+      "main": [
+        [
+          {
+            "node": "Pass Direct Extraction Files1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Docx Files1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Direct Extraction Files1": {
+      "main": [
+        [
+          {
+            "node": "Extract Direct Native Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Direct Native Text1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Extraction1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Docx Files1": {
+      "main": [
+        [
+          {
+            "node": "Download Source As Pdf1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Source As Pdf1": {
+      "main": [
+        [
+          {
+            "node": "Attach Docx Pdf Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Docx Pdf Context1": {
+      "main": [
+        [
+          {
+            "node": "Extract Docx Pdf Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Docx Pdf Text1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Extraction1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Extraction1": {
+      "main": [
+        [
+          {
+            "node": "Pass Post Extraction Exit1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Post Extraction Continue1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Post Extraction Exit1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Post Extraction Exit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Post Extraction Continue1": {
+      "main": [
+        [
+          {
+            "node": "Download Workbook Binary1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Workbook Binary1": {
+      "main": [
+        [
+          {
+            "node": "Attach Workbook Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Workbook Context1": {
+      "main": [
+        [
+          {
+            "node": "Extract Workbook Rows1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Workbook Rows1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Workbook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Workbook1": {
+      "main": [
+        [
+          {
+            "node": "Match Company1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Company1": {
+      "main": [
+        [
+          {
+            "node": "Pass Match Exit1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Match Continue1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Match Exit1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Match Exit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Match Continue1": {
+      "main": [
+        [
+          {
+            "node": "List Destination Children1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Destination Children1": {
+      "main": [
+        [
+          {
+            "node": "Resolve Destination Folder1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Destination Folder1": {
+      "main": [
+        [
+          {
+            "node": "Pass Folder Exit1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Folder Continue1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Folder Exit1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Folder Exit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Folder Continue1": {
+      "main": [
+        [
+          {
+            "node": "Build Output Plan1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Output Plan1": {
+      "main": [
+        [
+          {
+            "node": "Pass Preview1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Copy1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Preview1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Preview1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Copy1": {
+      "main": [
+        [
+          {
+            "node": "Upload File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload File1": {
+      "main": [
+        [
+          {
+            "node": "Finalize Copied1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "60eae1a8cbe912976622a47c40d9637a5b8d4ffaf1215d277d54166d099093c1"
+  }
+}
