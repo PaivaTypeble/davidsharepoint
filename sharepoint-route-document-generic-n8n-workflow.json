@@ -293,7 +293,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const item = $input.first().json;\r\nconst fileName = String(item.source.itemName || \u0027\u0027);\r\nconst extensionMatch = /\\.[^.]+$/.exec(fileName);\r\nconst sourceExtension = extensionMatch ? extensionMatch[0].toLowerCase() : \u0027\u0027;\r\n\r\nconst textLike = new Set([\u0027.txt\u0027, \u0027.csv\u0027, \u0027.json\u0027, \u0027.xml\u0027]);\r\nconst imageLike = new Set([\u0027.png\u0027, \u0027.jpg\u0027, \u0027.jpeg\u0027, \u0027.tif\u0027, \u0027.tiff\u0027, \u0027.bmp\u0027, \u0027.gif\u0027, \u0027.webp\u0027]);\r\n\r\nlet extractOperation = null;\r\nlet extractionStatus = \u0027native\u0027;\r\nlet extractionMessage = null;\r\nlet earlyStatus = null;\r\nlet ocrPending = false;\r\n\r\nif (textLike.has(sourceExtension)) {\r\n  extractOperation = \u0027text\u0027;\r\n} else if (sourceExtension === \u0027.pdf\u0027) {\r\n  extractOperation = \u0027pdf\u0027;\r\n} else if (sourceExtension === \u0027.docx\u0027) {\r\n  extractOperation = \u0027pdf\u0027;\r\n} else if (imageLike.has(sourceExtension)) {\r\n  extractionStatus = \u0027ocr_required\u0027;\r\n  extractionMessage = \u0027The source file is an image and needs OCR.\u0027;\r\n  earlyStatus = \u0027ocr_required\u0027;\r\n  ocrPending = true;\r\n} else {\r\n  extractionStatus = \u0027unsupported\u0027;\r\n  extractionMessage = \u0027The file extension \u0027 + JSON.stringify(sourceExtension || \u0027\u003cnone\u003e\u0027) + \u0027 is not supported without OCR.\u0027;\r\n  earlyStatus = \u0027unsupported\u0027;\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...item,\r\n    sourceExtension,\r\n    extractOperation,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    earlyStatus,\r\n    ocrPending,\r\n  },\r\n}];",
+                                         "jsCode":  "const item = $input.first().json;\r\nconst fileName = String(item.source.itemName || \u0027\u0027);\r\nconst extensionMatch = /\\.[^.]+$/.exec(fileName);\r\nconst sourceExtension = extensionMatch ? extensionMatch[0].toLowerCase() : \u0027\u0027;\r\n\r\nconst textLike = new Set([\u0027.txt\u0027, \u0027.csv\u0027, \u0027.json\u0027, \u0027.xml\u0027]);\r\nconst imageLike = new Set([\u0027.png\u0027, \u0027.jpg\u0027, \u0027.jpeg\u0027, \u0027.tif\u0027, \u0027.tiff\u0027, \u0027.bmp\u0027, \u0027.gif\u0027, \u0027.webp\u0027]);\r\n\r\nlet extractOperation = null;\r\nlet extractionStatus = \u0027native\u0027;\r\nlet extractionMessage = null;\r\nlet earlyStatus = null;\r\nlet ocrPending = false;\r\n\r\nif (textLike.has(sourceExtension)) {\r\n  extractOperation = \u0027text\u0027;\r\n} else if (sourceExtension === \u0027.pdf\u0027) {\r\n  extractOperation = \u0027pdf\u0027;\r\n} else if (sourceExtension === \u0027.docx\u0027) {\r\n  extractOperation = \u0027pdf\u0027;\r\n} else if (imageLike.has(sourceExtension)) {\r\n  extractionStatus = \u0027ocr_required\u0027;\r\n  extractionMessage = \u0027The source file is an image and needs OCR.\u0027;\r\n  ocrPending = true;\r\n} else {\r\n  extractionStatus = \u0027unsupported\u0027;\r\n  extractionMessage = \u0027The file extension \u0027 + JSON.stringify(sourceExtension || \u0027\u003cnone\u003e\u0027) + \u0027 is not supported without OCR.\u0027;\r\n  earlyStatus = \u0027unsupported\u0027;\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...item,\r\n    sourceExtension,\r\n    extractOperation,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    earlyStatus,\r\n    ocrPending,\r\n  },\r\n}];",
                                          "language":  "javaScript",
                                          "mode":  "runOnceForAllItems"
                                      },
@@ -435,6 +435,21 @@
                   },
                   {
                       "parameters":  {
+                                         "jsCode":  "const item = $input.first();\r\nreturn item.json.extractOperation ? [] : [item];",
+                                         "language":  "javaScript",
+                                         "mode":  "runOnceForAllItems"
+                                     },
+                      "id":  "59",
+                      "name":  "Pass OCR Pending Files",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2040,
+                                       240
+                                   ]
+                  },
+                  {
+                      "parameters":  {
                                          "jsCode":  "const item = $input.first();\r\nreturn item.json.sourceExtension === \u0027.docx\u0027 ? [item] : [];",
                                          "language":  "javaScript",
                                          "mode":  "runOnceForAllItems"
@@ -516,7 +531,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const item = $input.first();\r\nconst json = item.json;\r\n\r\nconst candidateText = typeof json.text === \u0027string\u0027\r\n  ? json.text\r\n  : typeof json.extractedText === \u0027string\u0027\r\n    ? json.extractedText\r\n    : \u0027\u0027;\r\n\r\nconst extractedText = candidateText.trim();\r\n\r\nlet extractionStatus = \u0027native\u0027;\r\nlet extractionMessage = null;\r\nlet ocrPending = false;\r\nlet postExtractionStatus = null;\r\n\r\nif (!extractedText) {\r\n  if (json.extractOperation === \u0027pdf\u0027) {\r\n    extractionStatus = \u0027ocr_required\u0027;\r\n    extractionMessage = \u0027The PDF does not expose any native text and needs OCR.\u0027;\r\n    ocrPending = true;\r\n    postExtractionStatus = \u0027ocr_required\u0027;\r\n  } else {\r\n    extractionStatus = \u0027unsupported\u0027;\r\n    extractionMessage = \u0027The source text file is empty.\u0027;\r\n    postExtractionStatus = \u0027unsupported\u0027;\r\n  }\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...json,\r\n    extractedText: extractedText || null,\r\n    extractedTextPreview: extractedText ? extractedText.slice(0, 500) : null,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    ocrPending,\r\n    postExtractionStatus,\r\n  },\r\n}];",
+                                         "jsCode":  "const item = $input.first();\r\nconst json = item.json;\r\n\r\nconst candidateText = typeof json.text === \u0027string\u0027\r\n  ? json.text\r\n  : typeof json.extractedText === \u0027string\u0027\r\n    ? json.extractedText\r\n    : \u0027\u0027;\r\n\r\nconst extractedText = candidateText.trim();\r\n\r\nlet extractionStatus = json.extractionStatus || \u0027native\u0027;\r\nlet extractionMessage = json.extractionMessage || null;\r\nlet ocrPending = Boolean(json.ocrPending);\r\nlet postExtractionStatus = null;\r\n\r\nif (!extractedText) {\r\n  if (json.extractionStatus === \u0027ocr_required\u0027) {\r\n    extractionStatus = \u0027ocr_required\u0027;\r\n    extractionMessage = json.extractionMessage || \u0027The source file needs OCR.\u0027;\r\n    ocrPending = true;\r\n  } else if (json.extractOperation === \u0027pdf\u0027) {\r\n    extractionStatus = \u0027ocr_required\u0027;\r\n    extractionMessage = \u0027The PDF does not expose any native text and needs OCR.\u0027;\r\n    ocrPending = true;\r\n  } else {\r\n    extractionStatus = \u0027unsupported\u0027;\r\n    extractionMessage = \u0027The source text file is empty.\u0027;\r\n    postExtractionStatus = \u0027unsupported\u0027;\r\n  }\r\n}\r\n\r\nreturn [{\r\n  json: {\r\n    ...json,\r\n    extractedText: extractedText || null,\r\n    extractedTextPreview: extractedText ? extractedText.slice(0, 500) : null,\r\n    extractionStatus,\r\n    extractionMessage,\r\n    ocrPending,\r\n    postExtractionStatus,\r\n  },\r\n}];",
                                          "language":  "javaScript",
                                          "mode":  "runOnceForAllItems"
                                      },
@@ -1387,6 +1402,11 @@
                                                                                     "index":  0
                                                                                 },
                                                                                 {
+                                                                                    "node":  "Pass OCR Pending Files",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                },
+                                                                                {
                                                                                     "node":  "Pass Docx Files",
                                                                                     "type":  "main",
                                                                                     "index":  0
@@ -1416,6 +1436,17 @@
                                                                         ]
                                                                     ]
                                                        },
+                        "Pass OCR Pending Files":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Normalize Extraction",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
                         "Pass Docx Files":  {
                                                 "main":  [
                                                              [
