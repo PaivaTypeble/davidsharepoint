@@ -32,7 +32,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "return [{\r\n  json: {\r\n    tenantId: \u0027YOUR_TENANT_ID\u0027,\r\n    clientId: \u0027YOUR_CLIENT_ID\u0027,\r\n    clientSecret: \u0027YOUR_CLIENT_SECRET\u0027,\r\n    sourceFileUrl: \u0027\u0027,\r\n    destinationRootFolderUrl: \u0027\u0027,\r\n    mappingWorkbookUrl: \u0027\u0027,\r\n    mappingWorkbookFileName: \u0027Company Acronyms and NIPC.xlsx\u0027,\r\n    analysisApiUrl: \u0027http://localhost:5058/api/sharepoint/analyze-invoice\u0027,\r\n    targetFileName: \u0027\u0027,\r\n    dryRun: true,\r\n  },\r\n}];",
+                                         "jsCode":  "return [{\r\n  json: {\r\n    tenantId: \u0027cdaa8854-518d-4919-9955-4b57e9f57741\u0027,\r\n    clientId: \u0027YOUR_CLIENT_ID\u0027,\r\n    clientSecret: \u0027YOUR_CLIENT_SECRET\u0027,\r\n    sourceFileUrl: \u0027https://awareness.sharepoint.com/sites/AW-Autom/Documentos%20Partilhados/Geral/Matriz/AWA_510231845_AWARENESS_Accounting/202601/Awareness%200126.pdf\u0027,\r\n    destinationRootFolderUrl: \u0027https://awareness.sharepoint.com/sites/AW-Autom/Documentos%20Partilhados/Geral/Matriz\u0027,\r\n    mappingWorkbookUrl: \u0027\u0027,\r\n    mappingWorkbookFileName: \u0027Company Acronyms and NIPC.xlsx\u0027,\r\n    analysisApiUrl: \u0027http://localhost:5058/api/sharepoint/analyze-invoice\u0027,\r\n    targetFileName: \u0027\u0027,\r\n    dryRun: true,\r\n  },\r\n}];",
                                          "language":  "javaScript",
                                          "mode":  "runOnceForAllItems"
                                      },
